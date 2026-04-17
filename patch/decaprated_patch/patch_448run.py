@@ -74,13 +74,13 @@ def lora_forward_hack(self):
     return forward
 
 
-def make_diffusers_unicon_block(block_class: Type[torch.nn.Module]) -> Type[torch.nn.Module]:
+def make_diffusers_jointdiff_block(block_class: Type[torch.nn.Module]) -> Type[torch.nn.Module]:
     """
-    Make a class of UniCon blocks.
+    Make a class of jointdiff blocks.
     It adds joint cross attention to the forward function and enables related functions for initialzation and training.
     """
 
-    class UniConBlock(block_class):
+    class JointdiffBlock(block_class):
         # Save for unpatching later
         _parent = block_class
 
@@ -257,13 +257,13 @@ def make_diffusers_unicon_block(block_class: Type[torch.nn.Module]) -> Type[torc
                 batch_size = joint_norm_hidden_states.shape[0]
 
                 # Get paired joint cross attention inputs
-                x_ids, y_ids, x_weights, y_weights = self._unicon_config["attn_config"]
+                x_ids, y_ids, x_weights, y_weights = self._jointdiff_config["attn_config"]
                 
                 # print(f"x_weights shape: {x_weights.shape}")
 
 
                 #自适应权重
-                is_train = self._unicon_config["train"]
+                is_train = self._jointdiff_config["train"]
                 
                 # if is_train:
       
@@ -398,7 +398,7 @@ def make_diffusers_unicon_block(block_class: Type[torch.nn.Module]) -> Type[torc
 
                 
                 # 3. 后投影处理（保持原有逻辑但输入独立）
-                is_train = self._unicon_config["train"]
+                is_train = self._jointdiff_config["train"]
                 output1n = torch.zeros_like(attn_output)
 
                 if is_train:
@@ -409,7 +409,7 @@ def make_diffusers_unicon_block(block_class: Type[torch.nn.Module]) -> Type[torc
                         self.post
                     )
                 else:
-                    cond_masks = self._unicon_config["cond_masks"]
+                    cond_masks = self._jointdiff_config["cond_masks"]
                     for cur_cond, cond_mask in cond_masks.items():
                         # 分别处理两个方向
                         x_post_out, y_post_out = self.post_proj(
@@ -547,7 +547,7 @@ def make_diffusers_unicon_block(block_class: Type[torch.nn.Module]) -> Type[torc
 
             return hidden_states
 
-    return UniConBlock
+    return JointdiffBlock
 
 
 def apply_patch(
@@ -555,12 +555,12 @@ def apply_patch(
         train=False,
         name_skip=None):
     """
-    Patches a diffusion model from diffusers with UniCon.
+    Patches a diffusion model from diffusers with jointdiff.
 
     Args:
      - model: A top level Stable Diffusion module to patch in place.
      - train: Whether to train the model.
-     - name_skip: name for module you do not want to patch UniCon, e.g., name_skip="down_blocks" will skip the UNet encoder.
+     - name_skip: name for module you do not want to patch jointdiff, e.g., name_skip="down_blocks" will skip the UNet encoder.
 
     """
 
@@ -574,22 +574,22 @@ def apply_patch(
 
     diffusion_model = model.unet if hasattr(model, "unet") else model
 
-    diffusion_model._unicon_config = {
+    diffusion_model._jointdiff_config = {
         "train": train,
     }
-    make_unicon_block_fn = make_diffusers_unicon_block
+    make_jointdiff_block_fn = make_diffusers_jointdiff_block
 
     for name, module in diffusion_model.named_modules():
         if name_skip is not None and name_skip in name:
             continue
         if isinstance_str(module, "BasicTransformerBlock"):
-            module.__class__ = make_unicon_block_fn(module.__class__)
+            module.__class__ = make_jointdiff_block_fn(module.__class__)
 
-            new_class = make_unicon_block_fn(module.__class__)
+            new_class = make_jointdiff_block_fn(module.__class__)
             # new_module = new_class()  # 创建新类的临时实例
 
             # module.forward = MethodType(new_module.forward, module)
-            module._unicon_config = diffusion_model._unicon_config
+            module._jointdiff_config = diffusion_model._jointdiff_config
             
             # 判断并设置所有关键层的标记，保持对称层相同标记
             
@@ -606,7 +606,7 @@ def remove_patch(model: torch.nn.Module):
 
     model = model.unet if hasattr(model, "unet") else model
     for _, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             module.__class__ = module._parent
 
     return model
@@ -631,11 +631,11 @@ def set_patch_lora_mask(model: torch.nn.Module, lora_name, lora_mask, kv_lora_ma
 
 
 def set_joint_layer_requires_grad(model: torch.nn.Module, adapter_names, requires_grad):
-    """ Set requires_grad for all unicon parameters """
+    """ Set requires_grad for all jointdiff parameters """
 
     model = model.unet if hasattr(model, "unet") else model
     for _, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             module.set_joint_layer_requires_grad(adapter_names, requires_grad)
     return model
 
@@ -655,7 +655,7 @@ def set_joint_attention(model: torch.nn.Module, enable=True, name_filter=None):
 
     model = model.unet if hasattr(model, "unet") else model
     for name, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             if name_filter is None or name_filter in name:
                 module.set_joint_attention(enable=enable)
     return model
@@ -666,7 +666,7 @@ def set_joint_scale(model: torch.nn.Module, scale=1.0):
 
     model = model.unet if hasattr(model, "unet") else model
     for _, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             module.set_joint_scale(scale=scale)
     return model
 
@@ -676,7 +676,7 @@ def initialize_joint_layers(model: torch.nn.Module, post="conv"):
 
     model = model.unet if hasattr(model, "unet") else model
     for _, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             module.initialize_joint_layers(post=post)
     return model
 
@@ -686,16 +686,16 @@ def add_post_joint(model: torch.nn.Module, name, post="conv", add_bias=False, **
 
     model = model.unet if hasattr(model, "unet") else model
     for _, module in model.named_modules():
-        if module.__class__.__name__ == "UniConBlock":
+        if module.__class__.__name__ == "JointdiffBlock":
             module.add_post_joint(name, post, add_bias)
     return model
 
 
-def set_unicon_config(model: torch.nn.Module, k, v):
+def set_jointdiff_config(model: torch.nn.Module, k, v):
     """ Update joint cross attention configurations in patched modules """
 
     model = model.unet if hasattr(model, "unet") else model
-    model._unicon_config[k] = v
+    model._jointdiff_config[k] = v
     return model
 
 

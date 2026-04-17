@@ -536,7 +536,7 @@ class seg_decorder(nn.Module):
         # print('feature_map.shape',feature_map.shape)
 
         # feature_map = feature_map.detach().cpu().numpy()
-        # save_dir = '/opt/data/private/hwj_autodrive/UniCon/eval_metric_visual/featureviusal/nomseloss_seghead/img_seghead'
+        # save_dir = '/opt/data/private/hwj_autodrive/jointdiff/eval_metric_visual/featureviusal/nomseloss_seghead/img_seghead'
 
         # # 处理批次维度
         # if len(feature_map.shape) == 4:  # [B, C, H, W]

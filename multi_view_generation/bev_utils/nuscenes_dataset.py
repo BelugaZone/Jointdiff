@@ -1,59 +1,50 @@
-import pyrootutils
-from PIL import Image, ImageDraw
-from heapq import nlargest
-from nuscenes.utils.geometry_utils import view_points
-from einops import rearrange
-import time
-from collections.abc import Iterable
-from pathlib import Path
 import hashlib
-from typing import Dict, Union, Tuple, Optional
+import os
+import pickle
+import random
+import time
+from heapq import nlargest
+from os.path import exists
+from pathlib import Path
+from typing import Dict, Optional, Tuple, Union
+
 import albumentations as A
 import cv2
 import numpy as np
 import torch
-import pickle
+import torchvision.transforms as T
+from einops import rearrange
+from nuscenes.utils.geometry_utils import BoxVisibility, view_points
+from numpy.linalg import inv
+from PIL import Image, ImageDraw
 from pyquaternion import Quaternion
 from torch.utils.data import DataLoader, Dataset
-from os.path import exists
 from torchvision.transforms.functional import to_tensor
-import torchvision.transforms.functional as F
-import torchvision.transforms as T
-from multi_view_generation.bev_utils.nuscenes_helper import polar_transform
-import os
-from numpy.linalg import inv
 from tqdm import tqdm
-from nuscenes.utils.geometry_utils import BoxVisibility
-from multi_view_generation.bev_utils import Cameras
-from multi_view_generation.bev_utils import util, raw_output_data_bev_grid, NUSCENES_DIR, SAVE_DATA_DIR
-from multi_view_generation.bev_utils import render_helper
-from multi_view_generation.bev_utils import bev_pixels_to_cam , render_map_in_image
+
+from multi_view_generation.bev_utils import Cameras, raw_output_data_bev_grid, util, viz_bev
+from multi_view_generation.bev_utils import NUSCENES_DIR, SAVE_DATA_DIR, render_helper
 from multi_view_generation.bev_utils.nuscenes_helper import (
-    Split,
+    DIVIDER,
+    DYNAMIC,
+    STATIC,
     NuScenesSingleton,
-    get_split,
+    NusceneCamGeometry,
+    Split,
     compute_pixel_ray_directions,
-    quaternion_yaw,
     get_annotations_by_category,
     get_dynamic_layers,
+    get_dynamic_objects,
     get_line_layers,
+    get_split,
     get_static_layers,
     parse_pose,
     parse_scene,
-    decode_binary_labels,
-    decode,
-    encode,
+    polar_transform,
+    quaternion_yaw,
     split_range,
-    get_dynamic_objects,
-    DIVIDER,
-    STATIC,
-    DYNAMIC,
-    NUM_CLASSES,
-    NusceneCamGeometry,
 )
-import random
-
-from multi_view_generation.bev_utils import viz_bev
+from multi_view_generation.bev_utils.nuscenes_helper import decode_binary_labels
 
 class NuScenesDataset(Dataset):
     def __init__(
@@ -112,7 +103,6 @@ class NuScenesDataset(Dataset):
         self.cameras = [[0, 1, 2, 3, 4, 5]]
         self.CAMERAS = [0]
 
-        # self.cam_res = cam_res if isinstance(cam_res, Iterable) else (cam_res, cam_res)
         self.cam_res = cam_res
 
         self.split_scenes = get_split(self.split.name.lower())
@@ -159,68 +149,18 @@ class NuScenesDataset(Dataset):
                 with open(pickle_name, "wb") as f:  # "wb" because we want to write in binary mode
                     pickle.dump((self.samples, self.nusc_map), f)
 
-        # self.cam_transform = A.Compose([])
-
         self.max_h_pre_crop = None
         self.cam_intrinsic_aug = NusceneCamGeometry()
-
-        # if self.augment_cam_img:
-        #     self.cam_transform = A.Compose([A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=5, p=0.5)])
-        #     if not self.non_square_images:
-        #         self.max_h_pre_crop = int(1.125 * max(self.cam_res))
-        #         self.cam_transform = A.Compose([self.cam_transform, A.RandomCrop(*self.cam_res)])
-        # elif not self.non_square_images:
-        #     self.max_h_pre_crop = cam_res
-        #     self.cam_transform = A.Compose(
-        #         [
-        #             A.CenterCrop(*self.cam_res),
-        #         ]
-        #     )
-
-        # if self.flip_imgs:
-        #     self.cam_transform = A.Compose([self.cam_transform, A.HorizontalFlip(p=0.5)])
-
-        # if normalize_cam_img and not self.stage_2_training:
-        #     self.cam_transform = A.Compose(
-        #         [
-        #             self.cam_transform,
-        #             A.Normalize(mean=(0.4265, 0.4489, 0.4769), std=(0.2053, 0.2206, 0.2578), max_pixel_value=255.0),
-        #         ]
-        #     )
-
-        # # Override all previously set augs
-        # if self.non_square_images:
-        #     if self.stage_2_training:
-        #         self.color_transform = T.ColorJitter(brightness=0.1, contrast=0.05, saturation=0.05, hue=0.05)
-        #     else:
-        #         self.color_transform = T.ColorJitter(brightness=0.15, contrast=0.1, saturation=0.1, hue=0.1)
-
-        #     self.cam_transform = T.Compose([
-        #         T.Normalize(
-        #             mean=(0.4265, 0.4489, 0.4769),
-        #             std=(0.2053, 0.2206, 0.2578),
-        #         ),
-        #     ])
-
-        # if "square_images_cityscapes" in kwargs:
-        #     self.cam_transform = T.Compose(
-        #         [
-        #             T.CenterCrop(900), T.Resize((256, 256), T.InterpolationMode.BICUBIC), self.cam_transform
-        #         ]
-        #     )
-
-        # self.bev_transform = A.Compose([A.Resize(bev_res, bev_res, interpolation=cv2.INTER_LANCZOS4)])
-
-        # if self.stage_2_training:
-        #     if augment_bev_img and self.split == Split.TRAIN:
-        #         self.bev_transform = A.Compose([A.ShiftScaleRotate(shift_limit=0.0, scale_limit=0.01, rotate_limit=1, p=0.5)])
-        #     else:
-        #         self.bev_transform = A.Compose([])
-        # elif self.metadrive_compatible_v2:
-        #     if augment_bev_img:
-        #         self.bev_transform = A.Compose([A.ShiftScaleRotate(shift_limit=0.075, scale_limit=0.075, rotate_limit=10, p=0.5), A.HorizontalFlip(p=0.5)])
-        #     else:
-        #         self.bev_transform = A.Compose([])
+        self.color_transform = None
+        if self.non_square_images:
+            if self.stage_2_training:
+                self.color_transform = T.ColorJitter(
+                    brightness=0.1, contrast=0.05, saturation=0.05, hue=0.05
+                )
+            else:
+                self.color_transform = T.ColorJitter(
+                    brightness=0.15, contrast=0.1, saturation=0.1, hue=0.1
+                )
 
         sha = hashlib.sha1(f"{','.join([*self.split_scenes, dataset_type, str(only_keyframes)])}".encode("utf-8"))
         pickle_name = Path.home() / ".cache" / "nuscenes" / f"{sha.hexdigest()}.p"
@@ -376,39 +316,32 @@ class NuScenesDataset(Dataset):
         img = Image.open(self.dataset_dir / image_path)
         img_resize = img.resize((self.cam_res[0],self.cam_res[1]), Image.Resampling.BICUBIC)
         im_to_process = np.asarray(img)
-        img_origin = np.asarray(img)
         img_resize = np.asarray(img_resize)
         center_pixel = im_to_process.shape[1] // 2
         self.max_h_pre_crop = self.cam_res[0]
 
         if self.max_h_pre_crop is not None:
-                scale = self.max_h_pre_crop / float(max(im_to_process.shape[1],
-                                                        im_to_process.shape[0]))
                 self.cam_intrinsic_aug.set_scale(self.cam_res[0]/1600, self.cam_res[1]/900)
-                im_to_process = util.smallest_max_size(im_to_process,
-                                                        self.max_h_pre_crop)
-        
-        cam_transform = A.Compose([])
-        cam_transform = A.Compose(
-                [
-                    cam_transform,
-                    # A.Normalize(mean=(0.4265, 0.4489, 0.4769), std=(0.2053, 0.2206, 0.2578), max_pixel_value=255.0),
-                    # A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0),
-                    A.Normalize(mean=0.5, std=0.5, max_pixel_value=255.0),
-                ]
-            )
-        cam_transform = A.Compose([ cam_transform, A.CenterCrop(height=self.cam_res[1], width=self.cam_res[0])])
+                im_to_process = util.smallest_max_size(
+                    im_to_process,
+                    self.max_h_pre_crop,
+                )
 
-        if cam_transform is not None:
-                transformed_cam_img = cam_transform(image=img_resize)["image"]
-        else:
-                transformed_cam_img = im_to_process
+        cam_transform = A.Compose(
+            [
+                A.Normalize(mean=0.5, std=0.5, max_pixel_value=255.0),
+                A.CenterCrop(height=self.cam_res[1], width=self.cam_res[0]),
+            ]
+        )
+        transformed_cam_img = cam_transform(image=img_resize)["image"]
 
         # reform the intrinsics
         camera_intrinsic = self.cam_intrinsic_aug.apply(cam['camera_intrinsic'])
         fx, fy = cam["camera_intrinsic"][0][0], cam["camera_intrinsic"][1][1]
         img_w, img_h = img.size[1], img.size[0]
-        center_angle_offset = -compute_pixel_ray_directions(np.array([[center_pixel, img.size[1] / 2]]), fx, fy, img_h, img_w)[0, 0]
+        center_angle_offset = -compute_pixel_ray_directions(
+            np.array([[center_pixel, img.size[1] / 2]]), fx, fy, img_h, img_w
+        )[0, 0]
         return transformed_cam_img, center_angle_offset, center_pixel, camera_intrinsic
 
     def get_random_metadrive_bev(self, cam_record_data: Dict):
@@ -459,10 +392,6 @@ class NuScenesDataset(Dataset):
 
         aux, visibility = get_dynamic_objects(cam_record_data, anns_vehicle)
 
-        # util.get_layered_image_from_binary_mask(static[..., 0][..., None].astype(np.bool)).save('static.png')
-        # util.get_layered_image_from_binary_mask(dynamic.astype(np.bool)).save('dynamic.png')
-        # util.get_layered_image_from_binary_mask(dividers.astype(np.bool)).save('dividers.png')
-
         bev = np.concatenate((static, dividers, dynamic, visibility[..., None]), -1)  # 200 200 14
         bev = (bev / 255.0).astype(np.float32)
         bev = np.concatenate((bev, aux), -1)
@@ -470,209 +399,73 @@ class NuScenesDataset(Dataset):
         return bev
 
     def get_standard_bev(self, cam_record_data: Dict):
-        """Return BEV image (12-channel) that covers 360 deg around ego"""
-        # Raw annotations
+        """Return BEV image (12-channel) that covers 360 deg around ego."""
         anns_dynamic = get_annotations_by_category(self.nusc, cam_record_data, DYNAMIC)
-        anns_vehicle = get_annotations_by_category(self.nusc, cam_record_data, ["vehicle"])[0]
 
-        static = get_static_layers(self.nusc_map, cam_record_data, STATIC)  # 200 200 2
-        dividers = get_line_layers(self.nusc_map, cam_record_data, DIVIDER)  # 200 200 2
-        dynamic = get_dynamic_layers(cam_record_data, anns_dynamic)  # 200 200 8
-        bev = np.concatenate((static, dividers, dynamic), -1)  # 200 200 12
-        # E01 = np.array([
-        #        [ 5.6847786e-03, -9.9998349e-01,  8.0507132e-04,  5.0603189e-03],
-        #        [-5.6366678e-03, -8.3711528e-04, -9.9998379e-01,  1.5205332e+00],
-        #        [ 9.9996793e-01,  5.6801485e-03, -5.6413338e-03, -1.6923035e+00],
-        #        [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]
-        #         ])
-            
-        # intrinsics01 = np.array([
-        #                [202.62675249,   0.0,         130.60272316],
-        #                [  0.0,         360.22533776, 139.80645427],
-        #                [  0.0,           0.0,           1.0        ]
-        #                ])
+        static = get_static_layers(self.nusc_map, cam_record_data, STATIC)
+        dividers = get_line_layers(self.nusc_map, cam_record_data, DIVIDER)
+        dynamic = get_dynamic_layers(cam_record_data, anns_dynamic)
+        bev = np.concatenate((static, dividers, dynamic), -1)
 
-        # channel_coords = bev_pixels_to_cam(bev, E01)
-                      
-        # bev_cam = render_map_in_image(intrinsics01, channel_coords)
-        # bev = bev_cam         
-        #print("dynamic.shape",dynamic.shape)
-         # 提取扇形区域
-        center=(128, 128)
-        start_angle=240
-        end_angle=300
+        center = (128, 128)
+        start_angle, end_angle = 240, 300
         width, height = bev.shape[1], bev.shape[0]
         cx, cy = center
-
-        # 计算覆盖整个图像的最小半径
-        corners = [(0, 0), (width-1, 0), (0, height-1), (width-1, height-1)]
-        distances = [np.sqrt((cx - x)**2 + (cy - y)**2) for x, y in corners]
+        corners = [(0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)]
+        distances = [np.sqrt((cx - x) ** 2 + (cy - y) ** 2) for x, y in corners]
         r = int(np.ceil(max(distances)))
 
-    # 生成扇形掩码
-        img_mask = Image.new('L', (width, height), 0)
+        img_mask = Image.new("L", (width, height), 0)
         draw = ImageDraw.Draw(img_mask)
-        draw.pieslice(
-           [cx - r, cy - r, cx + r, cy + r],  # 扇形边界框
-           start=start_angle, end=end_angle,
-           fill=255
-        )
-        sector_mask = (np.array(img_mask) > 0)  # 转换为布尔掩码
-        sector_mask = np.expand_dims(sector_mask, axis=-1)  # 形状 (256, 256, 1)
-        sector_mask = np.broadcast_to(sector_mask, (height, width, 13))  # 广播到 (256, 256, 12)
+        draw.pieslice([cx - r, cy - r, cx + r, cy + r], start=start_angle, end=end_angle, fill=255)
+        sector_mask = (np.array(img_mask) > 0)[..., None]
+        n_ch = bev.shape[-1]
+        sector_mask = np.broadcast_to(sector_mask, (height, width, n_ch))
 
-    # 将扇形掩码广播到与原掩码相同的维度并相乘
         bev = bev * sector_mask.astype(bev.dtype)
-
-        bev = (bev / 1.0).astype(np.float32)
+        bev = bev.astype(np.float32)
         if bev.max() > 1:
-           bev = (bev / 255.0)
-        
+            bev = bev / 255.0
 
-        # hwj modified
-        
         bev_resized = cv2.resize(bev, (self.cam_res[0], self.cam_res[1]), interpolation=cv2.INTER_LINEAR)
-        bev_resized = 2 * bev_resized - 1 
-        # bev_resized = bev_resized[..., [1, 4, 5]]
-        bev_resized = bev_resized[..., :12]
+        bev_resized = 2 * bev_resized - 1
+        return bev_resized[..., :12]
 
-        # bev_resized = bev_resized[..., [0, 1, 2, 3, 4, 5, 6]]
-        
-        # # 生成语义索引（通过 argmax 找激活的通道）
-        # semantic_indices = np.argmax(bev_resized, axis=2)  # 形状 [H, W]
-        # unique_values = np.unique(semantic_indices)
-
-        # # 打印结果
-        # print(f"Unique label values ({len(unique_values)} classes):")
-        # print(np.sort(unique_values))
-
-        
-
-        # semantic_indices += 1 
-        
-        # # 检查像素是否被激活（若所有通道为 False，则未激活）
-        # mask_valid = np.any(bev_resized, axis=2)  # 形状 [H, W]
-        
-        # # 将未激活的像素设为 0
-        # semantic_indices = np.where(mask_valid, semantic_indices, 0)
-
-       
-        
-        # # 将结果存入 labels
-        # bev_resized = decode(semantic_indices, 3)
-
-        # bev_resized = 2 * bev_resized - 1
-
-        
-
-
-
-        
-
-        return bev_resized
-
+    @staticmethod
     def get_visible_mask(instrinsics, image_width, extents, resolution):
-
-        # Get calibration parameters
         fu, cu = instrinsics[0, 0], instrinsics[0, 2]
-
-        # Construct a grid of image coordinates
         x1, z1, x2, z2 = extents
-        x, z = np.arange(x1, x2, resolution), np.arange(z1, z2, resolution)
+        x = np.arange(x1, x2, resolution)
+        z = np.arange(z1, z2, resolution)
         ucoords = x / z[:, None] * fu + cu
-
-        # Return all points which lie within the camera bounds
         return (ucoords >= 0) & (ucoords < image_width)
 
     def get_fov_bev(self, cam_record_data):
-        #print("cam_record_data['cam_token']", cam_record_data['cam_token'])
-        label_path = os.path.join(self.dataset_dir, "map-labels-v1.3", cam_record_data['cam_token'] + ".png")
+        label_path = os.path.join(
+            self.dataset_dir, "map-labels-v1.3", cam_record_data["cam_token"] + ".png"
+        )
         encoded_labels = to_tensor(Image.open(label_path)).long()
 
-        NUSCENES_CLASS_NAMES = ['drivable_area', 'ped_crossing', 'walkway', 'carpark_area', 'bus',
-                                'bicycle', 'car', 'construction_vehicle', 'motorcycle', 'trailer', 'truck', 'pedestrian', 'traffic_cone', 'barrier']
-
-        # Decode to binary labels
-        
-        num_class = len(NUSCENES_CLASS_NAMES)
+        nuscenes_class_names = [
+            "drivable_area", "ped_crossing", "walkway", "carpark_area", "bus",
+            "bicycle", "car", "construction_vehicle", "motorcycle", "trailer", "truck",
+            "pedestrian", "traffic_cone", "barrier",
+        ]
+        num_class = len(nuscenes_class_names)
         labels = decode_binary_labels(encoded_labels, num_class + 1)
-        # labels, mask = labels[:-1], ~labels[-1]
-         
-
-        # 训练时，使用v1.3，应用掩码，bev生成图片时，使用v1.3，应用掩码； bev分割时，使用v1.2不应用掩码
-        # 对前14个通道应用掩码
-        mask = ~labels[-1] 
+        mask = ~labels[-1]
         masked_labels = labels[:-1] * mask
         labels = masked_labels
 
-
-
-
-        # 上下翻转操作！！！
-        # bev = torch.flipud(labels.permute(1, 2, 0))
-        bev = labels.permute(1, 2, 0)
-        bev = bev.numpy()
-        bev = (bev / 1.0).astype(np.float32)
-        # channel_sums = np.sum(bev, axis=2)
-        # print("Unique sums:", np.unique(channel_sums))
-        # print(bev.shape)
+        bev = labels.permute(1, 2, 0).numpy().astype(np.float32)
 
         bev_resized = cv2.resize(bev, (self.cam_res[0], self.cam_res[1]), interpolation=cv2.INTER_LINEAR)
-        # bev_resized = cv2.resize(bev, (256, 256), interpolation=cv2.INTER_LINEAR)
-
-        # 宽度填充
-        # new_width = 448
-        # current_width = bev_resized.shape[1]  # 256
-        # padding = (new_width - current_width) // 2  # 每侧填充量
-        # left_pad = padding
-        # right_pad = padding
-
-        # # 检查是否需要不对称填充（如果总填充为奇数）
-        # if (new_width - current_width) % 2 != 0:
-        #     right_pad += 1  # 右侧多填1像素
-
-        # # 应用填充：高度不填充，宽度两侧填充，通道不填充
-        # bev_resized = np.pad(bev_resized, 
-        #                     ((0, 0), (left_pad, right_pad), (0, 0)),  # 填充模式
-        #                     mode='constant', 
-        #                     constant_values=0)
-    
-        
-
-        bev_resized = (bev_resized > 0.5)
-        bev_resized = bev_resized.astype(np.float32)
-        bev_resized = 2 * bev_resized - 1 
-        # bev_resized = bev_resized[..., :6]
-        # bev_resized = bev_resized[..., [1, 4, 5]]
-        # bev_resized = normalized_data[..., [0, 2, 6]]
-
+        bev_resized = (bev_resized > 0.5).astype(np.float32)
+        bev_resized = 2 * bev_resized - 1
         return bev_resized
 
     def get_bev(self, cam_record, sample_token, sample_record, lidar_record, map_name):
-
-        egolidar = self.nusc.get("ego_pose", lidar_record["ego_pose_token"])
-
-        world_from_egolidarflat = parse_pose(egolidar, flat=True)
-        egolidarflat_from_world = parse_pose(egolidar, flat=True, inv=True)
-
-        cam_record_data = {}
-        cam = self.nusc.get("calibrated_sensor", cam_record["calibrated_sensor_token"])
-        # cam_record_data["token"] = sample_token
-        cam_record_data["pose"] = world_from_egolidarflat.tolist()
-        cam_record_data["pose_inverse"] = egolidarflat_from_world.tolist()
-        cam_record_data["scene"] = self.nusc.get("scene", sample_record["scene_token"])["name"]
-        cam_record_data["cam_token"] = cam_record['token']
-        cam_record_data["intrinsic"] = cam["camera_intrinsic"]
-
-
-        bev = None
-        
-        #print("running get_standard_bev")
-        bev = self.get_fov_bev(cam_record_data)
-       
-       
-
-        return bev
+        return self.get_fov_bev({"cam_token": cam_record["token"]})
 
     def get_box_2d(self, box, view: np.ndarray = np.eye(3), normalize: bool = False):
         """
@@ -1034,9 +827,8 @@ class NuScenesDataset(Dataset):
                 cam_token = sample_record["data"][cam_channel]
                 full_path = Path(self.nusc.get_sample_data_path(cam_token))
                 image_paths.append(str(full_path))
-                intrinsics = self.nusc.get("calibrated_sensor", self.nusc.get("sample_data", cam_token)["calibrated_sensor_token"])["camera_intrinsic"]
 
-            data = {**data, "image_paths": image_paths}
+            ret = {**ret, "image_paths": image_paths}
 
         return ret
 
@@ -1104,30 +896,12 @@ class NuScenesDataset(Dataset):
             data = {**data, "render_samples": render_samples}
 
         if "return_seg_img" in self.kwargs:
- # preds = []
-            # imgs = []
-            # for path in data['image_paths']:
-            #     file_path = (Path('/data1/datasets/nuscenes_cityscapes_v3') / path).with_suffix('.npz')
-            #     pred = np.load(file_path)['pred']
-            #     preds.append(pred)
-            # 
-            #     img = Image.open(self.dataset_dir / path)
-            #     img = img.crop((350, 0, 1250, 900))
-            #     img = img.resize((256, 256))
-            #     img = np.asarray(img)
-            #     img = self.cam_transform(torch.from_numpy(img / 255).permute(2, 0, 1)).permute(1, 2, 0)
-            #     imgs.append(img)
-            # 
-            # seg_mask = np.stack(preds).transpose(1, 2, 0)
-            # data['image_gt'] = data['image'].copy()
-
             CAM_DATA = {'CAM_FRONT': (1266.417203046554, 1266.417203046554, 0.005684811144346602),
                         'CAM_BACK': (809.2209905677063, 809.2209905677063, 3.1391709219861887),
                         'CAM_FRONT_RIGHT': (1260.8474446004698, 1260.8474446004698, 5.298742851167251),
                         'CAM_FRONT_LEFT': (1272.5979470598488, 1272.5979470598488, 0.9627404474321728),
                         'CAM_BACK_RIGHT': (1259.5137405846733, 1259.5137405846733, 4.349372983905386),
                         'CAM_BACK_LEFT': (1256.7414812095406, 1256.7414812095406, 1.895431863668132)}
-            warped_imgs = []
             for cam_idx in self.select_cameras:
                 cam_channel = Cameras.NUSCENES_CAMERAS[cam_idx]
 
@@ -1135,13 +909,7 @@ class NuScenesDataset(Dataset):
                                           -CAM_DATA[cam_channel][2], dtype=torch.FloatTensor)
                 rotated_im = rearrange(rotated_im, '() c h w -> h w c')
                 rotated_im = torch.from_numpy(polar_transform(rotated_im.numpy()))
-                #warped_imgs.append(rotated_im)
                 data['warped_imgs'] = rotated_im
-
-                # viz_bev(rearrange(rotated_im, 'h w c -> c h w')).save(cam_channel)
-            # seg_mask = torch.from_numpy(seg_mask)
-            # data['segmentation'] = torch.from_numpy(polar_transform(data['segmentation'].numpy()))
-            # data = {**data, "camera_segmentation": seg_mask}
 
         return data
 
@@ -1152,7 +920,6 @@ class NuScenesDataset(Dataset):
 
         if self.return_bev_img:
             bev = torch.Tensor(self.get_bev(*record))
-           # print("bev.shape=========", bev.shape)
             data = {**data, "segmentation": bev}
 
         if self.return_cam_img:

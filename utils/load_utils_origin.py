@@ -138,8 +138,8 @@ def load_model_configs():
         model_configs[model_config["model_name"]] = model_config
     return model_configs
 
-# Load lora adapter and post projection weights of a UniCon model to UNet
-def load_unicon_weights(unet, checkpoint_path, post_joint, model_name = None, adapter_names = ["xy_lora", "yx_lora", "y_lora"]):
+# Load lora adapter and post projection weights of a jointdiff model to UNet
+def load_jointdiff_weights(unet, checkpoint_path, post_joint, model_name = None, adapter_names = ["xy_lora", "yx_lora", "y_lora"]):
 
     active_adapters = []
 
@@ -171,31 +171,31 @@ def load_unicon_weights(unet, checkpoint_path, post_joint, model_name = None, ad
     missing_keys, unexpected_keys = unet.load_state_dict(state_dict, strict=False)
     
 
-    if hasattr(unet, "unicon_adapters"):
-        unet.unicon_adapters[model_name] = active_adapters
+    if hasattr(unet, "jointdiff_adapters"):
+        unet.jointdiff_adapters[model_name] = active_adapters
     else:
-        unet.unicon_adapters = {model_name:active_adapters}
+        unet.jointdiff_adapters = {model_name:active_adapters}
 
     print(model_name, "model weights loaded")
     
     return active_adapters
 
 
-# Load UniCon model from checkpoint path to UNet
-def load_unicon_to_unet(unet, checkpoint_path, model_name = None, post_joint = "conv"):
+# Load jointdiff model from checkpoint path to UNet
+def load_jointdiff_to_unet(unet, checkpoint_path, model_name = None, post_joint = "conv"):
 
     patch.apply_patch(unet)
     patch.initialize_joint_layers(unet, post = post_joint)
-    print("UniCon layers initialized.")
+    print("jointdiff layers initialized.")
 
-    active_adapters = load_unicon_weights(unet, checkpoint_path, post_joint, model_name = model_name)
+    active_adapters = load_jointdiff_weights(unet, checkpoint_path, post_joint, model_name = model_name)
 
     unet.set_adapters(active_adapters)
     patch.hack_lora_forward(unet)
 
     return unet
 
-def load_unicon_pipeline(pipeline_class, base_model_id, vae_id = None):
+def load_jointdiff_pipeline(pipeline_class, base_model_id, vae_id = None):
     if vae_id is not None:
         print(f"VAE: {vae_id}")
         vae = AutoencoderKL.from_pretrained(vae_id, torch_dtype=torch.float16)
@@ -203,23 +203,23 @@ def load_unicon_pipeline(pipeline_class, base_model_id, vae_id = None):
     else:
         pipeline = pipeline_class.from_pretrained(base_model_id, safety_checker=None, torch_dtype=torch.float16)
         
-    print(f"UniCon pipeline loaded. Base model: {base_model_id}")    
+    print(f"jointdiff pipeline loaded. Base model: {base_model_id}")    
     return pipeline
 
-# 1 Load pipeline. 2 Add UniCon to UNet and load weights. 3 Load more UniCon models if any.
-def load_unicon(pipeline_class, model_configs):
+# 1 Load pipeline. 2 Add jointdiff to UNet and load weights. 3 Load more jointdiff models if any.
+def load_jointdiff(pipeline_class, model_configs):
     if not isinstance(model_configs, list):
         model_configs = [model_configs]
     
     model_config =  model_configs[0]
-    pipeline = load_unicon_pipeline(pipeline_class, model_configs[0]["base_model_id"])
+    pipeline = load_jointdiff_pipeline(pipeline_class, model_configs[0]["base_model_id"])
     pipeline.unet.base_model_id = model_configs[0]["base_model_id"]
     pipeline.unet = modify_unet_for_8_channels(pipeline.unet)
 
     checkpoint_path = model_config["checkpoint_path"]
     model_name = model_config["model_name"]
     post_joint = model_config["post_joint"]
-    pipeline.unet = load_unicon_to_unet(pipeline.unet, checkpoint_path, model_name = model_name, post_joint = post_joint)
+    pipeline.unet = load_jointdiff_to_unet(pipeline.unet, checkpoint_path, model_name = model_name, post_joint = post_joint)
 
 
     active_adapters = get_active_adapters(pipeline.unet)
@@ -227,7 +227,7 @@ def load_unicon(pipeline_class, model_configs):
         checkpoint_path = model_config["checkpoint_path"]
         model_name = model_config["model_name"]
         post_joint = model_config["post_joint"]
-        active_adapters += load_unicon_weights(pipeline.unet, checkpoint_path, post_joint, model_name = model_name)
+        active_adapters += load_jointdiff_weights(pipeline.unet, checkpoint_path, post_joint, model_name = model_name)
     
     pipeline.unet.set_adapters(active_adapters)
 

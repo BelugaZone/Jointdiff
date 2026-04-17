@@ -178,7 +178,7 @@ class TransformerLiftSplatShoot(nn.Module):
         # print('feature_map.shape',feature_map.shape)
 
         # feature_map = feature_map.detach().cpu().numpy()
-        # save_dir = '/opt/data/private/hwj_autodrive/UniCon/eval_metric_visual/featureviusal/LSS'
+        # save_dir = '/opt/data/private/hwj_autodrive/jointdiff/eval_metric_visual/featureviusal/LSS'
 
         # # 处理批次维度
         # if len(feature_map.shape) == 4:  # [B, C, H, W]

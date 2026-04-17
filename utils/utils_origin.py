@@ -70,8 +70,8 @@ def get_active_adapters(unet):
         if isinstance(module, BaseTunerLayer):
             return module.active_adapter
 
-def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = None, device = "cuda", debug=False):
-    """ Set config for unicon inference.
+def set_jointdiff_config_inference(unet, input_pairs, use_cfg = True, batch_size = None, device = "cuda", debug=False):
+    """ Set config for jointdiff inference.
         It does two things:
         1. Tell the model how to pair the inputs for joint cross attention.
             The input_pairs shoule be:
@@ -134,15 +134,15 @@ def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = 
                 print("Set", y_lora, y_lora_mask)
 
     attn_config = x_ids.to(device), y_ids.to(device), x_weights.to(device), y_weights.to(device)
-    patch.set_unicon_config(unet, "attn_config", attn_config)
-    patch.set_unicon_config(unet, "cond_masks", cond_masks)
+    patch.set_jointdiff_config(unet, "attn_config", attn_config)
+    patch.set_jointdiff_config(unet, "cond_masks", cond_masks)
     if debug:
         print("Set attn_config", attn_config)
         print("Set cond masks", cond_masks)
     
     return unet
 
-def set_unicon_config_train(unet, input_len, device = "cuda", dtype = torch.float16, debug = False):
+def set_jointdiff_config_train(unet, input_len, device = "cuda", dtype = torch.float16, debug = False):
 
     xy_lora = "xy_lora"
     yx_lora = "yx_lora"
@@ -169,7 +169,7 @@ def set_unicon_config_train(unet, input_len, device = "cuda", dtype = torch.floa
     x_weights = torch.ones([1,1,1]).to(device).to(dtype)
     y_weights = torch.ones([1,1,1]).to(device).to(dtype)
     attn_config = x_ids, y_ids, x_weights, y_weights
-    patch.set_unicon_config(unet, "attn_config", attn_config)
+    patch.set_jointdiff_config(unet, "attn_config", attn_config)
     if debug:
         print("Set attn_config", attn_config)
     

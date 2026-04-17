@@ -70,8 +70,8 @@ def get_active_adapters(unet):
         if isinstance(module, BaseTunerLayer):
             return module.active_adapter
 
-def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = None, device = "cuda", debug=False):
-    """ 设置 UniCon 模型的全参数推理配置
+def set_jointdiff_config_inference(unet, input_pairs, use_cfg = True, batch_size = None, device = "cuda", debug=False):
+    """ 设置 jointdiff 模型的全参数推理配置
     
     主要功能：
     1. 配置输入对的联合交叉注意力机制
@@ -115,8 +115,8 @@ def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = 
     
     # 将处理后的配置存入UNet
     attn_config = x_ids.to(device), y_ids.to(device), x_weights.to(device), y_weights.to(device)
-    patch.set_unicon_config(unet, "attn_config", attn_config)
-    patch.set_unicon_config(unet, "cond_masks", cond_masks)
+    patch.set_jointdiff_config(unet, "attn_config", attn_config)
+    patch.set_jointdiff_config(unet, "cond_masks", cond_masks)
     
     # 调试输出
     if debug:
@@ -125,7 +125,7 @@ def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = 
     
     return unet
 
-# def set_unicon_config_train(unet, input_len, device = "cuda", dtype = torch.float16, debug = False):
+# def set_jointdiff_config_train(unet, input_len, device = "cuda", dtype = torch.float16, debug = False):
 #
 #     xy_lora = "xy_lora"
 #     yx_lora = "yx_lora"
@@ -152,14 +152,14 @@ def set_unicon_config_inference(unet, input_pairs, use_cfg = True, batch_size = 
 #     x_weights = torch.ones([1,1,1]).to(device).to(dtype)
 #     y_weights = torch.ones([1,1,1]).to(device).to(dtype)
 #     attn_config = x_ids, y_ids, x_weights, y_weights
-#     patch.set_unicon_config(unet, "attn_config", attn_config)
+#     patch.set_jointdiff_config(unet, "attn_config", attn_config)
 #     if debug:
 #         print("Set attn_config", attn_config)
 #
 #     return unet
 
 
-def set_unicon_config_train(unet, input_len, device="cuda", dtype=torch.float16, debug=False):
+def set_jointdiff_config_train(unet, input_len, device="cuda", dtype=torch.float16, debug=False):
     # 定义前半段和后半段长度
     xlen = ylen = input_len // 2
     true_mask = [True] * xlen
@@ -211,7 +211,7 @@ def set_unicon_config_train(unet, input_len, device="cuda", dtype=torch.float16,
     y_weights = torch.ones([ylen, 1, 1]).to(device).to(dtype)
 
     attn_config = (x_ids, y_ids, x_weights, y_weights)
-    patch.set_unicon_config(unet, "attn_config", attn_config)
+    patch.set_jointdiff_config(unet, "attn_config", attn_config)
 
     if debug:
         print("attn_config:")

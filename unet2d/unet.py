@@ -269,11 +269,11 @@ class UNet2D(UNet2DConditionModel):
                 if is_adapter and len(down_intrablock_additional_residuals) > 0:
                     additional_residuals["additional_residuals"] = down_intrablock_additional_residuals.pop(0)
 
-                # if any(hasattr(m, 'is_unicon_block') for m in downsample_block.modules()):
+                # if any(hasattr(m, 'is_jointdiff_block') for m in downsample_block.modules()):
                    
-                #     # print("发现 UniConBlock 实例")
+                #     # print("发现 JointdiffBlock 实例")
                 #     for module in downsample_block.modules():
-                #         if hasattr(module, 'is_unicon_block') and module.is_unicon_block:
+                #         if hasattr(module, 'is_jointdiff_block') and module.is_jointdiff_block:
                 #             module.camera_E = camera_E
                 #             module.camera_intrinsic = camera_intrinsic
                 #             module.timestep = timestep
@@ -310,7 +310,7 @@ class UNet2D(UNet2DConditionModel):
 
             
                 # # 检查是否需要传入timestep
-                # if is_unicon_block:
+                # if is_jointdiff_block:
                 #     call_kwargs["timestep"] = timestep
             
                 # sample = downsample_block(**call_kwargs)
@@ -358,10 +358,10 @@ class UNet2D(UNet2DConditionModel):
             # print('com in mid')
             if hasattr(self.mid_block, "has_cross_attention") and self.mid_block.has_cross_attention:
 
-                # if any(hasattr(m, 'is_unicon_block') for m in self.mid_block.modules()):
-                #     # print("发现 UniConBlock 实例")
+                # if any(hasattr(m, 'is_jointdiff_block') for m in self.mid_block.modules()):
+                #     # print("发现 JointdiffBlock 实例")
                 #     for module in self.mid_block.modules():
-                #         if hasattr(module, 'is_unicon_block') and module.is_unicon_block:
+                #         if hasattr(module, 'is_jointdiff_block') and module.is_jointdiff_block:
                 #             module.camera_E = camera_E
                 #             module.camera_intrinsic = camera_intrinsic
                 #             module.timestep = timestep
@@ -437,10 +437,10 @@ class UNet2D(UNet2DConditionModel):
 
             if hasattr(upsample_block, "has_cross_attention") and upsample_block.has_cross_attention:
 
-                # if any(hasattr(m, 'is_unicon_block') for m in upsample_block.modules()):
-                #     # print("发现 UniConBlock 实例")
+                # if any(hasattr(m, 'is_jointdiff_block') for m in upsample_block.modules()):
+                #     # print("发现 JointdiffBlock 实例")
                 #     for module in upsample_block.modules():
-                #         if hasattr(module, 'is_unicon_block') and module.is_unicon_block:
+                #         if hasattr(module, 'is_jointdiff_block') and module.is_jointdiff_block:
                 #             module.camera_E = camera_E
                 #             module.camera_intrinsic = camera_intrinsic
                 #             module.timestep = timestep
@@ -501,7 +501,7 @@ class UNet2D(UNet2DConditionModel):
                     # print('feature_map.shape',feature_map.shape)
 
                     # feature_map = feature_map.detach().cpu().numpy()
-                    # save_dir = '/opt/data/private/hwj_autodrive/UniCon/eval_metric_visual/featureviusal/bev2img/up_corr'
+                    # save_dir = '/opt/data/private/hwj_autodrive/jointdiff/eval_metric_visual/featureviusal/bev2img/up_corr'
 
                     # # 处理批次维度
                     # if len(feature_map.shape) == 4:  # [B, C, H, W]

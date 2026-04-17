@@ -353,7 +353,7 @@ class SpatialCrossAttention(BaseModule):
 
 
         # # 创建保存目录
-        # save_dir = '/opt/data/private/hwj_autodrive/UniCon/eval_metric_visual/featureviusal'
+        # save_dir = '/opt/data/private/hwj_autodrive/jointdiff/eval_metric_visual/featureviusal'
         # os.makedirs(save_dir, exist_ok=True)
 
         # batch_idx = 0    # 选择第一个批次
